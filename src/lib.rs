@@ -13,10 +13,10 @@ use std::result;
 
 use memchr::memchr;
 
-/// An error returned from [`CStrArgument::into_cstr`] to indicate that a null byte
+/// An error returned from [`CStrArgument::try_into_cstr`] to indicate that a null byte
 /// was found before the last byte in the string.
 ///
-/// [`CStrArgument::into_cstr`]: trait.CStrArgument.html#tymethod.into_cstr
+/// [`CStrArgument::try_into_cstr`]: trait.CStrArgument.html#tymethod.try_into_cstr
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NulError<T> {
     inner: T,
@@ -74,7 +74,7 @@ type Result<T, S> = result::Result<T, NulError<S>>;
 /// }
 ///
 /// fn bar<S: CStrArgument>(s: S) {
-///     let s = s.into_cstr().expect("argument contained interior nulls");
+///     let s = s.into_cstr();
 ///     unsafe {
 ///         foo(s.as_ref().as_ptr())
 ///     }
@@ -91,13 +91,25 @@ pub trait CStrArgument: fmt::Debug + Sized {
     /// The type of the string after conversion. The type may or may not own the resulting string.
     type Output: AsRef<CStr>;
 
-    /// The function that converts the string.
+    /// Returns the string with a null terminator or an error.
     ///
     /// # Errors
     ///
     /// This function will return an error if the string contains a null byte at any position
     /// other than the final.
-    fn into_cstr(self) -> Result<Self::Output, Self>;
+    fn try_into_cstr(self) -> Result<Self::Output, Self>;
+
+    /// Returns the string with a null terminator.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the string contains a null byte at any position other
+    /// than the final. See [`try_into_cstr`](#tymethod.try_into_cstr) for a non-panicking version
+    /// of this function.
+    fn into_cstr(self) -> Self::Output {
+        self.try_into_cstr()
+            .expect("string contained an interior null byte")
+    }
 }
 
 // BUG in rustc (#23341)
@@ -106,7 +118,7 @@ pub trait CStrArgument: fmt::Debug + Sized {
 //         impl<T> CStrArgument for T where Self: AsRef<CStr> {
 //             default type Output = Self;
 //
-//             default fn into_cstr(self) -> Result<Self, Self> {
+//             default fn try_into_cstr(self) -> Result<Self, Self> {
 //                 Ok(self)
 //             }
 //         }
@@ -114,8 +126,8 @@ pub trait CStrArgument: fmt::Debug + Sized {
 //         impl<'a, T> CStrArgument for &'a T where Self: AsRef<str> {
 //             default type Output = Cow<'a, CStr>;
 //
-//             default fn into_cstr(self) -> Result<Self::Output, Self> {
-//                 self.as_ref().into_cstr()
+//             default fn try_into_cstr(self) -> Result<Self::Output, Self> {
+//                 self.as_ref().try_into_cstr()
 //             }
 //         }
 //     } else {
@@ -123,7 +135,7 @@ impl<'a> CStrArgument for CString {
     type Output = Self;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self, Self> {
+    fn try_into_cstr(self) -> Result<Self, Self> {
         Ok(self)
     }
 }
@@ -132,7 +144,7 @@ impl<'a> CStrArgument for &'a CString {
     type Output = &'a CStr;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self::Output, Self> {
+    fn try_into_cstr(self) -> Result<Self::Output, Self> {
         Ok(self)
     }
 }
@@ -141,7 +153,7 @@ impl<'a> CStrArgument for &'a CStr {
     type Output = Self;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self, Self> {
+    fn try_into_cstr(self) -> Result<Self, Self> {
         Ok(self)
     }
 }
@@ -152,8 +164,8 @@ impl CStrArgument for String {
     type Output = CString;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self::Output, Self> {
-        self.into_bytes().into_cstr().map_err(|e| {
+    fn try_into_cstr(self) -> Result<Self::Output, Self> {
+        self.into_bytes().try_into_cstr().map_err(|e| {
             NulError {
                 inner: unsafe { String::from_utf8_unchecked(e.inner) },
                 pos: e.pos,
@@ -166,8 +178,8 @@ impl<'a> CStrArgument for &'a String {
     type Output = Cow<'a, CStr>;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self::Output, Self> {
-        self.as_bytes().into_cstr().map_err(|e| {
+    fn try_into_cstr(self) -> Result<Self::Output, Self> {
+        self.as_bytes().try_into_cstr().map_err(|e| {
             NulError {
                 inner: self,
                 pos: e.pos,
@@ -180,8 +192,8 @@ impl<'a> CStrArgument for &'a str {
     type Output = Cow<'a, CStr>;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self::Output, Self> {
-        self.as_bytes().into_cstr().map_err(|e| {
+    fn try_into_cstr(self) -> Result<Self::Output, Self> {
+        self.as_bytes().try_into_cstr().map_err(|e| {
             NulError {
                 inner: self,
                 pos: e.pos,
@@ -193,7 +205,7 @@ impl<'a> CStrArgument for &'a str {
 impl<'a> CStrArgument for Vec<u8> {
     type Output = CString;
 
-    fn into_cstr(mut self) -> Result<Self::Output, Self> {
+    fn try_into_cstr(mut self) -> Result<Self::Output, Self> {
         match memchr(0, &self) {
             Some(n) if n == (self.len() - 1) => {
                 self.pop();
@@ -212,8 +224,8 @@ impl<'a> CStrArgument for &'a Vec<u8> {
     type Output = Cow<'a, CStr>;
 
     #[inline]
-    fn into_cstr(self) -> Result<Self::Output, Self> {
-        self.as_slice().into_cstr().map_err(|e| {
+    fn try_into_cstr(self) -> Result<Self::Output, Self> {
+        self.as_slice().try_into_cstr().map_err(|e| {
             NulError {
                 inner: self,
                 pos: e.pos,
@@ -225,7 +237,7 @@ impl<'a> CStrArgument for &'a Vec<u8> {
 impl<'a> CStrArgument for &'a [u8] {
     type Output = Cow<'a, CStr>;
 
-    fn into_cstr(self) -> Result<Self::Output, Self> {
+    fn try_into_cstr(self) -> Result<Self::Output, Self> {
         match memchr(0, self) {
             Some(n) if n == (self.len() - 1) => Ok(Cow::Borrowed(
                 unsafe { CStr::from_bytes_with_nul_unchecked(self) },
@@ -249,7 +261,7 @@ mod tests {
     where
         T: CStrArgument,
         F: FnOnce(Result<T::Output, NulError<T>>) -> R, {
-        f(t.into_cstr())
+        f(t.try_into_cstr())
     }
 
     #[test]
@@ -354,5 +366,11 @@ mod tests {
         test(case, |s| s.unwrap_err());
         test(case.to_owned(), |s| s.unwrap_err());
         test(case.as_bytes(), |s| s.unwrap_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_interior_null_panic() {
+        "\0\0".into_cstr();
     }
 }
