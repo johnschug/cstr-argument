@@ -1,14 +1,22 @@
+//! A trait for converting function arguments to null terminated strings.
+#![deny(missing_docs)]
 // #![cfg_attr(any(nightly, feature = "nightly"), feature(specialization))]
 // #[macro_use]
 // extern crate cfg_if;
 extern crate memchr;
 
+use std::error;
+use std::fmt;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::result;
 
 use memchr::memchr;
 
+/// An error returned from [`CStrArgument::into_cstr`] to indicate that a null byte
+/// was found before the last byte in the string.
+///
+/// [`CStrArgument::into_cstr`]: trait.CStrArgument.html#tymethod.into_cstr
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NulError<T> {
     inner: T,
@@ -16,22 +24,79 @@ pub struct NulError<T> {
 }
 
 impl<T> NulError<T> {
+    /// Returns the position of the null byte in the string.
     #[inline]
     pub fn nul_position(&self) -> usize {
         self.pos
     }
 
+    /// Returns the original string.
     #[inline]
     pub fn into_inner(self) -> T {
         self.inner
     }
 }
 
+impl<T> fmt::Display for NulError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "nul byte found before end of provided data at position: {}",
+            self.pos
+        )
+    }
+}
+
+impl<T: fmt::Debug> error::Error for NulError<T> {
+    fn description(&self) -> &str {
+        "nul byte found before end of data"
+    }
+}
+
 type Result<T, S> = result::Result<T, NulError<S>>;
 
-pub trait CStrArgument: Sized {
+/// A trait for converting function arguments to null terminated strings. It can be used to convert
+/// string arguments that are passed on to C APIs using the minimal amount of allocations.
+///
+/// Strings that are already null terminated are just wrapped in a CStr without any allocations.
+/// Strings that are not already null terminated are converted to a CString possibly requiring one
+/// or more allocations. Trying to convert strings with a null byte in any position other than the
+/// final will result in an error.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::os::raw::c_char;
+/// use cstr_argument::CStrArgument;
+///
+/// extern "C" {
+///     fn foo(s: *const c_char);
+/// }
+///
+/// fn bar<S: CStrArgument>(s: S) {
+///     let s = s.into_cstr().expect("argument contained interior nulls");
+///     unsafe {
+///         foo(s.as_ref().as_ptr())
+///     }
+/// }
+///
+/// fn baz() {
+///     bar("hello "); // Argument will be converted to a CString requiring an allocation
+///     bar("world\0"); // Argument will be converted to a CStr without any allocations
+///     bar("!".to_owned()); // Argument will be converted to a CString possibly requiring an
+///                          // allocation
+/// }
+/// ```
+pub trait CStrArgument: fmt::Debug + Sized {
+    /// The type of the string after conversion. The type may or may not own the resulting string.
     type Output: AsRef<CStr>;
 
+    /// The function that converts the string.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the string contains a null byte at any position
+    /// other than the final.
     fn into_cstr(self) -> Result<Self::Output, Self>;
 }
 
@@ -43,6 +108,14 @@ pub trait CStrArgument: Sized {
 //
 //             default fn into_cstr(self) -> Result<Self, Self> {
 //                 Ok(self)
+//             }
+//         }
+//
+//         impl<'a, T> CStrArgument for &'a T where Self: AsRef<str> {
+//             default type Output = Cow<'a, CStr>;
+//
+//             default fn into_cstr(self) -> Result<Self::Output, Self> {
+//                 self.as_ref().into_cstr()
 //             }
 //         }
 //     } else {

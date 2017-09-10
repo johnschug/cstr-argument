@@ -3,10 +3,11 @@ name = "cstr-argument"
 version = "0.0.1"
 authors = ["John Schug <john.ips.schug@gmail.com>"]
 license = "Unlicense"
-description = ""
+readme = "README.md"
 repository = "https://github.com/johnschug/cstr-argument"
 documentation = "https://docs.rs/cstr-argument"
 keywords = ["ffi"]
+description = "A trait for converting function arguments to null terminated strings"
 
 [badges]
 travis-ci = { repository = "johnschug/cstr-argument" }
@@ -17,4 +18,4 @@ nightly = []
 
 [dependencies]
 cfg-if = "0.1"
-memchr = "1.0"
+memchr = "1"
