@@ -1,10 +1,13 @@
 // #![cfg_attr(any(nightly, feature = "nightly"), feature(specialization))]
 // #[macro_use]
 // extern crate cfg_if;
+extern crate memchr;
 
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::result;
+
+use memchr::memchr;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct NulError<T> {
@@ -13,10 +16,12 @@ pub struct NulError<T> {
 }
 
 impl<T> NulError<T> {
+    #[inline]
     pub fn nul_position(&self) -> usize {
         self.pos
     }
 
+    #[inline]
     pub fn into_inner(self) -> T {
         self.inner
     }
@@ -44,6 +49,7 @@ pub trait CStrArgument: Sized {
 impl<'a> CStrArgument for CString {
     type Output = Self;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self, Self> {
         Ok(self)
     }
@@ -52,6 +58,7 @@ impl<'a> CStrArgument for CString {
 impl<'a> CStrArgument for &'a CString {
     type Output = &'a CStr;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self::Output, Self> {
         Ok(self)
     }
@@ -60,6 +67,7 @@ impl<'a> CStrArgument for &'a CString {
 impl<'a> CStrArgument for &'a CStr {
     type Output = Self;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self, Self> {
         Ok(self)
     }
@@ -70,21 +78,21 @@ impl<'a> CStrArgument for &'a CStr {
 impl CStrArgument for String {
     type Output = CString;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self::Output, Self> {
-        unsafe {
-            self.into_bytes().into_cstr().map_err(|e| {
-                NulError {
-                    inner: String::from_utf8_unchecked(e.inner),
-                    pos: e.pos,
-                }
-            })
-        }
+        self.into_bytes().into_cstr().map_err(|e| {
+            NulError {
+                inner: unsafe { String::from_utf8_unchecked(e.inner) },
+                pos: e.pos,
+            }
+        })
     }
 }
 
 impl<'a> CStrArgument for &'a String {
     type Output = Cow<'a, CStr>;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self::Output, Self> {
         self.as_bytes().into_cstr().map_err(|e| {
             NulError {
@@ -98,6 +106,7 @@ impl<'a> CStrArgument for &'a String {
 impl<'a> CStrArgument for &'a str {
     type Output = Cow<'a, CStr>;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self::Output, Self> {
         self.as_bytes().into_cstr().map_err(|e| {
             NulError {
@@ -112,18 +121,16 @@ impl<'a> CStrArgument for Vec<u8> {
     type Output = CString;
 
     fn into_cstr(mut self) -> Result<Self::Output, Self> {
-        unsafe {
-            match self.iter().position(|&x| x == 0) {
-                Some(n) if n == (self.len() - 1) => {
-                    self.pop();
-                    Ok(CString::from_vec_unchecked(self))
-                }
-                Some(n) => Err(NulError {
-                    inner: self,
-                    pos: n,
-                }),
-                None => Ok(CString::from_vec_unchecked(self)),
+        match memchr(0, &self) {
+            Some(n) if n == (self.len() - 1) => {
+                self.pop();
+                Ok(unsafe { CString::from_vec_unchecked(self) })
             }
+            Some(n) => Err(NulError {
+                inner: self,
+                pos: n,
+            }),
+            None => Ok(unsafe { CString::from_vec_unchecked(self) }),
         }
     }
 }
@@ -131,6 +138,7 @@ impl<'a> CStrArgument for Vec<u8> {
 impl<'a> CStrArgument for &'a Vec<u8> {
     type Output = Cow<'a, CStr>;
 
+    #[inline]
     fn into_cstr(self) -> Result<Self::Output, Self> {
         self.as_slice().into_cstr().map_err(|e| {
             NulError {
@@ -145,17 +153,17 @@ impl<'a> CStrArgument for &'a [u8] {
     type Output = Cow<'a, CStr>;
 
     fn into_cstr(self) -> Result<Self::Output, Self> {
-        unsafe {
-            match self.iter().position(|&x| x == 0) {
-                Some(n) if n == (self.len() - 1) => Ok(Cow::Borrowed(
-                    CStr::from_bytes_with_nul_unchecked(&self[..]),
-                )),
-                Some(n) => Err(NulError {
-                    inner: self,
-                    pos: n,
-                }),
-                None => Ok(Cow::Owned(CString::from_vec_unchecked(self.into()))),
-            }
+        match memchr(0, self) {
+            Some(n) if n == (self.len() - 1) => Ok(Cow::Borrowed(
+                unsafe { CStr::from_bytes_with_nul_unchecked(self) },
+            )),
+            Some(n) => Err(NulError {
+                inner: self,
+                pos: n,
+            }),
+            None => Ok(Cow::Owned(
+                unsafe { CString::from_vec_unchecked(self.into()) },
+            )),
         }
     }
 }
@@ -165,7 +173,9 @@ mod tests {
     use super::{CStrArgument, NulError};
 
     fn test<T, F, R>(t: T, f: F) -> R
-    where T: CStrArgument, F: FnOnce(Result<T::Output, NulError<T>>) -> R {
+    where
+        T: CStrArgument,
+        F: FnOnce(Result<T::Output, NulError<T>>) -> R, {
         f(t.into_cstr())
     }
 
@@ -249,11 +259,6 @@ mod tests {
 
     #[test]
     fn test_interior_null() {
-        let case = "\0\0";
-        test(case, |s| s.unwrap_err());
-        test(case.to_owned(), |s| s.unwrap_err());
-        test(case.as_bytes(), |s| s.unwrap_err());
-
         let case = "hello\0world";
         test(case, |s| s.unwrap_err());
         test(case.to_owned(), |s| s.unwrap_err());
@@ -262,6 +267,11 @@ mod tests {
 
     #[test]
     fn test_interior_and_terminating_null() {
+        let case = "\0\0";
+        test(case, |s| s.unwrap_err());
+        test(case.to_owned(), |s| s.unwrap_err());
+        test(case.as_bytes(), |s| s.unwrap_err());
+
         let case = "hello\0world\0";
         test(case, |s| s.unwrap_err());
         test(case.to_owned(), |s| s.unwrap_err());

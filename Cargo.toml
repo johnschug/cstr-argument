@@ -1,11 +1,20 @@
 [package]
 name = "cstr-argument"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["John Schug <john.ips.schug@gmail.com>"]
 license = "Unlicense"
+description = ""
+repository = "https://github.com/johnschug/cstr-argument"
+documentation = "https://docs.rs/cstr-argument"
+keywords = ["ffi"]
+
+[badges]
+travis-ci = { repository = "johnschug/cstr-argument" }
+maintenance = { status = "experimental" }
 
 [features]
 nightly = []
 
 [dependencies]
 cfg-if = "0.1"
+memchr = "1.0"
