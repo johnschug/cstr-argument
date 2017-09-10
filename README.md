@@ -13,7 +13,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-cstr-argument = "0.0.1"
+cstr-argument = "0.0.2"
 ```
 
 and this to your crate root:
@@ -33,7 +33,7 @@ extern "C" {
 }
 
 fn bar<S: CStrArgument>(s: S) {
-  let s = s.into_cstr().expect("argument contained interior nulls");
+  let s = s.into_cstr();
   unsafe {
     foo(s.as_ref().as_ptr())
   }
