@@ -5,10 +5,10 @@
 // extern crate cfg_if;
 extern crate memchr;
 
-use std::error;
-use std::fmt;
 use std::borrow::Cow;
+use std::error;
 use std::ffi::{CStr, CString};
+use std::fmt;
 use std::result;
 
 use memchr::memchr;
@@ -165,11 +165,9 @@ impl CStrArgument for String {
 
     #[inline]
     fn try_into_cstr(self) -> Result<Self::Output, Self> {
-        self.into_bytes().try_into_cstr().map_err(|e| {
-            NulError {
-                inner: unsafe { String::from_utf8_unchecked(e.inner) },
-                pos: e.pos,
-            }
+        self.into_bytes().try_into_cstr().map_err(|e| NulError {
+            inner: unsafe { String::from_utf8_unchecked(e.inner) },
+            pos: e.pos,
         })
     }
 }
@@ -179,11 +177,9 @@ impl<'a> CStrArgument for &'a String {
 
     #[inline]
     fn try_into_cstr(self) -> Result<Self::Output, Self> {
-        self.as_bytes().try_into_cstr().map_err(|e| {
-            NulError {
-                inner: self,
-                pos: e.pos,
-            }
+        self.as_bytes().try_into_cstr().map_err(|e| NulError {
+            inner: self,
+            pos: e.pos,
         })
     }
 }
@@ -193,11 +189,9 @@ impl<'a> CStrArgument for &'a str {
 
     #[inline]
     fn try_into_cstr(self) -> Result<Self::Output, Self> {
-        self.as_bytes().try_into_cstr().map_err(|e| {
-            NulError {
-                inner: self,
-                pos: e.pos,
-            }
+        self.as_bytes().try_into_cstr().map_err(|e| NulError {
+            inner: self,
+            pos: e.pos,
         })
     }
 }
@@ -225,11 +219,9 @@ impl<'a> CStrArgument for &'a Vec<u8> {
 
     #[inline]
     fn try_into_cstr(self) -> Result<Self::Output, Self> {
-        self.as_slice().try_into_cstr().map_err(|e| {
-            NulError {
-                inner: self,
-                pos: e.pos,
-            }
+        self.as_slice().try_into_cstr().map_err(|e| NulError {
+            inner: self,
+            pos: e.pos,
         })
     }
 }
@@ -239,16 +231,16 @@ impl<'a> CStrArgument for &'a [u8] {
 
     fn try_into_cstr(self) -> Result<Self::Output, Self> {
         match memchr(0, self) {
-            Some(n) if n == (self.len() - 1) => Ok(Cow::Borrowed(
-                unsafe { CStr::from_bytes_with_nul_unchecked(self) },
-            )),
+            Some(n) if n == (self.len() - 1) => Ok(Cow::Borrowed(unsafe {
+                CStr::from_bytes_with_nul_unchecked(self)
+            })),
             Some(n) => Err(NulError {
                 inner: self,
                 pos: n,
             }),
-            None => Ok(Cow::Owned(
-                unsafe { CString::from_vec_unchecked(self.into()) },
-            )),
+            None => Ok(Cow::Owned(unsafe {
+                CString::from_vec_unchecked(self.into())
+            })),
         }
     }
 }
