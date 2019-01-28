@@ -1,6 +1,6 @@
 [package]
 name = "cstr-argument"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["John Schug <john.ips.schug@gmail.com>"]
 license = "Unlicense"
 readme = "README.md"
