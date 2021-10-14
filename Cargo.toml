@@ -1,6 +1,6 @@
 [package]
 name = "cstr-argument"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["John Schug <john.ips.schug@gmail.com>"]
 license = "Unlicense"
 readme = "README.md"
@@ -17,5 +17,5 @@ maintenance = { status = "experimental" }
 nightly = []
 
 [dependencies]
-cfg-if = "0.1"
+cfg-if = "1"
 memchr = { version = "2", default-features = false }
